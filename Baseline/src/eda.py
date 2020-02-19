@@ -11,18 +11,29 @@ import warnings
 import statsmodels.api as sm
 warnings.filterwarnings("ignore")
 
+tr = pd.read_csv('../input/train.csv')
+tt = pd.read_csv('../input/test.csv')
 train = pd.read_csv('../input/new_train.csv')
 test = pd.read_csv('../input/new_test.csv')
 sub = pd.read_csv('../input/sample_submission.csv')
+kf = pd.read_csv('../input/KF_train.csv')
 
 #basic eda
 
-print(train.shape)
-print(train.head())
+
+
+print(train.columns)
+print(test.columns)
+for i in list(train.columns):
+    if i not in list(test.columns):
+        print(i)
+
 print('\n')
-print(test.shape)
-print(test.head())
-print(train.isnull().sum())
-print('\n')
-print(test.isnull().sum())
+print('test-train')
+for i in list(test.columns):
+    if i not in list(train.columns):
+        print(i)
+# for i in list(test.columns):
+#     if i not in list(kf.columns):
+#         print(i)
 

@@ -134,13 +134,8 @@ def mean_target_encoding(train, test, target, categorical, alpha=5):
 ############### Nominal preprocessing function #####################
 ####################################################################
 
-def nominal_processor1(data):
+def nominal_processor1(data, nominal):
     df = data.copy(deep = True)
-    # get nomical cols
-    nominal = []
-    for col in df.columns:
-        if 'nom' in col:
-            nominal.append(col)
 
     # label encode nominal columns
     print('progress bar for label encoder: \n')
@@ -165,15 +160,21 @@ def full_nominal_processor(train_data, test_data):
     df_train = train_data.copy(deep = True)
     df_test = test_data.copy(deep = True)
 
+    df_train['set'] = 'train'
+    df_test['set'] = 'test'
+
+    all_data = pd.concat([df_train, df_test])
+
     nominal = []
-    for col in df_train.columns:
+    for col in all_data.columns:
         if 'nom' in col:
             nominal.append(col)
     
-    print('train encoder: ')
-    df_train = nominal_processor1(df_train)
-    print('test encoder: ')
-    df_test = nominal_processor1(df_test)
+    print('encoder: ')
+    all_data = nominal_processor1(all_data, nominal)
+
+    df_train = all_data.query("set == 'train'").drop('set', axis = 1)
+    df_test = all_data.query("set == 'test'").drop('set', axis = 1)
     # for nominals 6 through 7 a mean encoding will have to be as for the high cardinality variables
     for col in nominal[6:]:
         df_train[f'{col}_enc'], df_test[f'{col}_enc'] = mean_target_encoding(train=df_train,
@@ -193,14 +194,10 @@ def CountEncoding(df, cols, df_test=None):
         frequencies = df[col].value_counts().reset_index()
         df_values = df[[col]].merge(frequencies, how='left', left_on=col, right_on='index').iloc[:,-1].values
         df[col+'_counts'] = df_values
-        if df_test is not None:
-            df_test_values = df_test[[col]].merge(frequencies, how='left', left_on=col, right_on='index').fillna(1).iloc[:,-1].values
-            df_test[col+'_counts'] = df_test_values
+        df_test_values = df_test[[col]].merge(frequencies, how='left', left_on=col, right_on='index').fillna(1).iloc[:,-1].values
+        df_test[col+'_counts'] = df_test_values
     count_cols = [col+'_counts' for col in cols]
-    if df_test is not None:
-        return df, df_test
-    else:
-        return df
+    return df, df_test
 
 def ordinal_processor(train, test):
     df_train = train.copy(deep = True)
@@ -211,7 +208,7 @@ def ordinal_processor(train, test):
         if 'ord' in col:
             ordinal.append(col)
 
-    train, test = CountEncoding(train, ordinal, df_test = df_test)
+    df_train, df_test = CountEncoding(df_train, ordinal, df_test = df_test)
 
     ordinal = []
     for col in df_train.columns:
@@ -318,20 +315,35 @@ if __name__ == '__main__':
     test = binary_processor(test)
     # Nominal
     train, test = full_nominal_processor(train, test)
+    print(train.head())
+    print(test.head())
     # Ordinal
     train, test = ordinal_processor(train,test)
     #cyclical processor
     train, test = cyclical_processor(train,test)
 
-    ## drop day month for now
-    # train  = train.drop(['day', 'month'], axis = 1)
+    # ## drop day month for now
+    dr = []
+    for i in list(train.columns):
+        if i not in list(test.columns):
+            dr.append(i)
+    if len(dr) > 0:
+        print(dr)
+    else:
+        print('all cool')
+        
+    # target = train['target'].values
+    # train  = train.drop(dr, axis = 1)s
+    # train['target'] = target
     # test = test.drop(['day', 'month'], axis = 1)
-
-    print(len(train.columns))
-    print(len(test.columns))
-    print(train.isnull().sum())
-    print('\n')
-    print(test.isnull().sum())
+    dr = []
+    for i in list(test.columns):
+        if i not in list(train.columns):
+            dr.append(i)
+    if len(dr) > 0:
+        print(dr)
+    else:
+        print('all cool')
 
     train.to_csv('../input/new_train.csv', index = False)
     test.to_csv('../input/new_test.csv', index = False)
