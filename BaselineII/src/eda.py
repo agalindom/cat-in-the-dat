@@ -16,7 +16,7 @@ tt = pd.read_csv('../input/test.csv')
 train = pd.read_csv('../input/new_train.csv')
 test = pd.read_csv('../input/new_test.csv')
 sub = pd.read_csv('../input/sample_submission.csv')
-kf = pd.read_csv('../input/KF_train.csv')
+# kf = pd.read_csv('../input/KF_train.csv')
 
 #basic eda
 

@@ -10,15 +10,15 @@ import warnings
 import statsmodels.api as sm
 from tqdm import tqdm_notebook as tqdm
 from sklearn import model_selection
+import category_encoders as ce
 warnings.filterwarnings("ignore")
 
 ## load the data
 train = pd.read_csv('../input/train.csv')
 test = pd.read_csv('../input/test.csv')
-sub = pd.read_csv('../input/sample_submission.csv')
 
 ####################################################################
-############### Label encoding function ############################
+############### Encoding functions ############################
 ####################################################################
 
 def label_encode(data, feats):
@@ -43,6 +43,43 @@ def label_encode(data, feats):
         
     return df
 
+def CountEncoding(df, cols, df_test=None):
+    for col in cols:
+        frequencies = df[col].value_counts().reset_index()
+        df_values = df[[col]].merge(frequencies, how='left', left_on=col, right_on='index').iloc[:,-1].values
+        df[col+'_counts'] = df_values
+        df_test_values = df_test[[col]].merge(frequencies, how='left', left_on=col, right_on='index').fillna(1).iloc[:,-1].values
+        df_test[col+'_counts'] = df_test_values
+    count_cols = [col+'_counts' for col in cols]
+    return df, df_test
+
+def TargetEncoder(train, test, smoothing = 0.3):
+    # get binary columns
+    train.sort_index(inplace=True)
+    target = train['target']
+    test_id = test['id']
+    train.drop(['target', 'id'], axis=1, inplace=True)
+    test.drop('id', axis=1, inplace=True)
+    cat_feats = train.columns.tolist()
+    smoothing = 0.3
+
+    oof = pd.DataFrame([])
+
+    for train_idx, valid_idx in model_selection.StratifiedKFold(n_splits=5, random_state=42, shuffle=True).split(train, target):
+        tgt_encoder = ce.TargetEncoder(cols=cat_feats, smoothing=smoothing)
+        tgt_encoder.fit(train[cat_feats].iloc[train_idx], target[train_idx])
+        oof = oof.append(tgt_encoder.transform(train.iloc[valid_idx, :]), ignore_index=False)
+
+    tgt_encoder = ce.TargetEncoder(cols = cat_feats, smoothing=smoothing)
+    tgt_encoder.fit(train, target)
+    train = oof.sort_index()
+    test = tgt_encoder.transform(test)
+    train['target'] = target
+    test['id'] = test_id
+    print('Target encoding done!')
+    return train, test
+
+
 ####################################################################
 ############### Binary preprocessing function ######################
 ####################################################################
@@ -60,16 +97,16 @@ def binary_processor(data):
     print('progress bar for label encoder: \n')
     df = label_encode(df, feats = ['bin_3', 'bin_4'])
     
-    # bin_0
-    df['bin_0'] = df['bin_0'].replace(np.nan, df['bin_0'].value_counts().index[0])
-    # bin_1
-    df['bin_1'] = df['bin_1'].replace(np.nan, df['bin_1'].value_counts().index[0])
-    # bin_2
-    df['bin_2'] = df['bin_2'].replace(np.nan, df['bin_2'].value_counts().index[0])
-    # bin_3
-    df['bin_3'] = df['bin_3'].replace(np.nan, df['bin_3'].value_counts().index[0])
-    # bin_4
-    df['bin_4'] = df['bin_4'].replace(np.nan, df['bin_4'].value_counts().index[0])
+    # # bin_0
+    # df['bin_0'] = df['bin_0'].replace(np.nan, df['bin_0'].value_counts().index[0])
+    # # bin_1
+    # df['bin_1'] = df['bin_1'].replace(np.nan, df['bin_1'].value_counts().index[0])
+    # # bin_2
+    # df['bin_2'] = df['bin_2'].replace(np.nan, df['bin_2'].value_counts().index[0])
+    # # bin_3
+    # df['bin_3'] = df['bin_3'].replace(np.nan, df['bin_3'].value_counts().index[0])
+    # # bin_4
+    # df['bin_4'] = df['bin_4'].replace(np.nan, df['bin_4'].value_counts().index[0])
     
     
     # sanity check
@@ -142,8 +179,8 @@ def nominal_processor1(data, nominal):
     df = label_encode(df, feats = nominal)
     
     # imputation
-    for col in nominal:
-        df[col] = df[col].replace(np.nan, df[col].value_counts().index[0])
+    # for col in nominal:
+    #     df[col] = df[col].replace(np.nan, df[col].value_counts().index[0])
     
     print('missing values for nominal cols')
     for col in nominal:
@@ -152,7 +189,7 @@ def nominal_processor1(data, nominal):
         
     # for nom columns 0 through 4 one hot encode will do
     # one hot encoding
-    df = pd.get_dummies(df, columns = nominal[:5])
+    #df = pd.get_dummies(df, columns = nominal[:5])
     
     return df
 
@@ -170,34 +207,24 @@ def full_nominal_processor(train_data, test_data):
         if 'nom' in col:
             nominal.append(col)
     
+    df_train, df_test = CountEncoding(df_train, nominal, df_test = df_test)
+    
     print('encoder: ')
     all_data = nominal_processor1(all_data, nominal)
 
     df_train = all_data.query("set == 'train'").drop('set', axis = 1)
     df_test = all_data.query("set == 'test'").drop('set', axis = 1)
+    df_test.drop('target', axis =1, inplace=True)
+
     # for nominals 6 through 7 a mean encoding will have to be as for the high cardinality variables
-    for col in nominal[6:]:
-        df_train[f'{col}_enc'], df_test[f'{col}_enc'] = mean_target_encoding(train=df_train,
-                                                                     test=df_test,
-                                                                     target='target',
-                                                                     categorical=col,
-                                                                     alpha=10)
+
+
     return df_train, df_test
 
 
 ####################################################################
 ############### Ordinal preprocessing function #####################
 ####################################################################
-
-def CountEncoding(df, cols, df_test=None):
-    for col in cols:
-        frequencies = df[col].value_counts().reset_index()
-        df_values = df[[col]].merge(frequencies, how='left', left_on=col, right_on='index').iloc[:,-1].values
-        df[col+'_counts'] = df_values
-        df_test_values = df_test[[col]].merge(frequencies, how='left', left_on=col, right_on='index').fillna(1).iloc[:,-1].values
-        df_test[col+'_counts'] = df_test_values
-    count_cols = [col+'_counts' for col in cols]
-    return df, df_test
 
 def ordinal_processor(train, test):
     df_train = train.copy(deep = True)
@@ -241,8 +268,8 @@ def ordinal_processor(train, test):
         
     ####### impute missing values #############
     ### train
-    for col in ordinal:
-        df_train[col] = df_train[col].replace(np.nan, df_train[col].value_counts().index[0])
+    # for col in ordinal:
+    #     df_train[col] = df_train[col].replace(np.nan, df_train[col].value_counts().index[0])
     ### sanity checker
     print('missing values for train ordinal cols')
     for col in ordinal:
@@ -250,8 +277,8 @@ def ordinal_processor(train, test):
     prop: {round(df_train[col].isnull().sum()/df_train.shape[0], 3)}')
     
     ### test
-    for col in ordinal:
-        df_test[col] = df_test[col].replace(np.nan, df_test[col].value_counts().index[0])
+    # for col in ordinal:
+    #     df_test[col] = df_test[col].replace(np.nan, df_test[col].value_counts().index[0])
     ### sanity checker   
     print('missing values for test ordinal cols')
     for col in ordinal:
@@ -259,12 +286,12 @@ def ordinal_processor(train, test):
     prop: {round(df_test[col].isnull().sum()/df_test.shape[0], 3)}')
 
     # mean encoding
-    for col in ordinal:
-        df_train[f'{col}_enc'], df_test[f'{col}_enc'] = mean_target_encoding(train=df_train,
-                                                                     test=df_test,
-                                                                     target='target',
-                                                                     categorical=col,
-                                                                     alpha=10)
+    # for col in ordinal:
+    #     df_train[f'{col}_enc'], df_test[f'{col}_enc'] = mean_target_encoding(train=df_train,
+    #                                                                  test=df_test,
+    #                                                                  target='target',
+    #                                                                  categorical=col,
+    #                                                                  alpha=10)
 
    
     return df_train, df_test
@@ -277,6 +304,11 @@ def cyclical_processor(train, test):
     df_train = train.copy(deep = True)
     df_test = test.copy(deep = True)
 
+    for col in ['day', 'month']:
+        df_test[col] = df_test[col].replace(np.nan, df_test[col].value_counts().index[0])
+    for col in ['day', 'month']:
+        df_train[col] = df_train[col].replace(np.nan, df_train[col].value_counts().index[0])
+
     ## train data
     df_train['month_sin'] = np.sin((df_train['month'] - 1) * (2.0 * np.pi / 12))
     df_train['month_cos'] = np.cos((df_train['month'] - 1) * (2.0 * np.pi / 12))
@@ -284,11 +316,8 @@ def cyclical_processor(train, test):
     df_train['day_sin'] = np.sin((df_train['day'] - 1) * (2.0 * np.pi / 7))
     df_train['day_cos'] = np.cos((df_train['day'] - 1) * (2.0 * np.pi / 7))
 
-    for col in ['day', 'month']:
-        df_train[col] = df_train[col].replace(np.nan, df_train[col].value_counts().index[0])
-
-    for col in ['month_sin', 'month_cos', 'day_sin', 'day_cos']:
-        df_train[col] = df_train[col].replace(np.nan, df_train[col].mean())
+    # for col in ['month_sin', 'month_cos', 'day_sin', 'day_cos']:
+    #     df_train[col] = df_train[col].replace(np.nan, df_train[col].mean())
     
     ## test data
     df_test['month_sin'] = np.sin((df_test['month'] - 1) * (2.0 * np.pi / 12))
@@ -297,11 +326,8 @@ def cyclical_processor(train, test):
     df_test['day_sin'] = np.sin((df_test['day'] - 1) * (2.0 * np.pi / 7))
     df_test['day_cos'] = np.cos((df_test['day'] - 1) * (2.0 * np.pi / 7))
 
-    for col in ['day', 'month']:
-        df_test[col] = df_test[col].replace(np.nan, df_test[col].value_counts().index[0])
-
-    for col in ['month_sin', 'month_cos', 'day_sin', 'day_cos', 'day', 'month']:
-        df_test[col] = df_test[col].replace(np.nan, df_test[col].mean())
+    # for col in ['month_sin', 'month_cos', 'day_sin', 'day_cos', 'day', 'month']:
+    #     df_test[col] = df_test[col].replace(np.nan, df_test[col].mean())
 
     return df_train, df_test
 
@@ -315,14 +341,20 @@ if __name__ == '__main__':
     test = binary_processor(test)
     # Nominal
     train, test = full_nominal_processor(train, test)
-    print(train.head())
-    print(test.head())
     # Ordinal
     train, test = ordinal_processor(train,test)
     #cyclical processor
     train, test = cyclical_processor(train,test)
+    # print(len(train.columns))
+    # print(train.columns)
+    # print(len(test.columns))
+    # print(test.columns)
+    #target encoder
+    train = train.fillna(-1)
+    train = train.fillna(-1)
+    train, test = TargetEncoder(train, test)
 
-    # ## drop day month for now
+    ## drop day month for now
     dr = []
     for i in list(train.columns):
         if i not in list(test.columns):
@@ -332,10 +364,6 @@ if __name__ == '__main__':
     else:
         print('all cool')
         
-    # target = train['target'].values
-    # train  = train.drop(dr, axis = 1)s
-    # train['target'] = target
-    # test = test.drop(['day', 'month'], axis = 1)
     dr = []
     for i in list(test.columns):
         if i not in list(train.columns):

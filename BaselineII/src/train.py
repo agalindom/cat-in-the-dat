@@ -40,8 +40,8 @@ if __name__ == '__main__':
     valid = df[df.kfold==FOLD].reset_index(drop = True)
 
     #drop id variable from train
-    train = train.drop('id', axis = 1)
-    valid = valid.drop('id', axis = 1)
+    # train = train.drop('id', axis = 1)
+    # valid = valid.drop('id', axis = 1)
 
     # separate target and training data
     ytrain = train['target'].values

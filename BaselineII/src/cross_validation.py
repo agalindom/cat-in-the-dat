@@ -56,8 +56,6 @@ class CrossValidation:
             elif unique_values > 1:
                 kf = model_selection.StratifiedKFold(n_splits=self.num_folds, 
                                                      shuffle=False)
-                #kf = model_selection.StratifiedShuffleSplit(n_splits=5, 
-                #test_size=0.20,random_state=42)
 
                 for fold, (train_idx, val_idx) in enumerate(kf.split(X=self.dataframe, y=self.dataframe[target].values)):
                     self.dataframe.loc[val_idx, 'kfold'] = fold
